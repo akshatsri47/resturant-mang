@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Building2 } from "lucide-react";
 
 export function LoginForm({
   className,
@@ -38,8 +39,27 @@ export function LoginForm({
         password,
       });
       if (error) throw error;
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/protected");
+
+      // Get role and redirect
+      const { data: profile } = await supabase
+        .from("staff_profiles")
+        .select("role")
+        .single();
+
+      const roleRedirects: Record<string, string> = {
+        super_admin: "/dashboard/super-admin",
+        admin: "/dashboard/admin",
+        supervisor: "/dashboard/supervisor",
+        reception: "/dashboard/reception",
+        staff: "/dashboard/staff",
+      };
+
+      const target = profile
+        ? (roleRedirects[profile.role] ?? "/dashboard/admin")
+        : "/dashboard/admin";
+
+      router.push(target);
+      router.refresh();
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
     } finally {
@@ -48,36 +68,44 @@ export function LoginForm({
   };
 
   return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Login</CardTitle>
-          <CardDescription>
-            Enter your email below to login to your account
-          </CardDescription>
+    <div className={cn("flex flex-col gap-6 w-full", className)} {...props}>
+      <Card className="border-border/50 bg-card/80 backdrop-blur-sm shadow-2xl">
+        <CardHeader className="text-center space-y-3">
+          <div className="flex justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15 border border-primary/30">
+              <Building2 className="h-6 w-6 text-primary" />
+            </div>
+          </div>
+          <div>
+            <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
+            <CardDescription className="text-muted-foreground mt-1">
+              Sign in to the hotel management dashboard
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin}>
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="m@example.com"
+                  placeholder="you@hotel.com"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  className="bg-input/50"
                 />
               </div>
               <div className="grid gap-2">
-                <div className="flex items-center">
+                <div className="flex items-center justify-between">
                   <Label htmlFor="password">Password</Label>
                   <Link
                     href="/auth/forgot-password"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                    className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline transition-colors"
                   >
-                    Forgot your password?
+                    Forgot password?
                   </Link>
                 </div>
                 <Input
@@ -86,20 +114,29 @@ export function LoginForm({
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  className="bg-input/50"
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Login"}
+              {error && (
+                <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
+                  {error}
+                </p>
+              )}
+              <Button
+                type="submit"
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-semibold mt-1"
+                disabled={isLoading}
+              >
+                {isLoading ? "Signing in..." : "Sign In"}
               </Button>
             </div>
-            <div className="mt-4 text-center text-sm">
-              Don&apos;t have an account?{" "}
+            <div className="mt-5 text-center text-sm text-muted-foreground">
+              New hotel?{" "}
               <Link
                 href="/auth/sign-up"
-                className="underline underline-offset-4"
+                className="text-primary underline underline-offset-4 hover:text-primary/80"
               >
-                Sign up
+                Register your hotel
               </Link>
             </div>
           </form>

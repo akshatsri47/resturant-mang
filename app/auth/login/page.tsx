@@ -1,9 +1,28 @@
 import { LoginForm } from "@/components/login-form";
+import { Building2 } from "lucide-react";
 
-export default function Page() {
+export default function LoginPage() {
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute inset-0 hotel-gradient" />
+      <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 left-1/4 w-64 h-64 bg-primary/3 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 w-full max-w-md space-y-6">
+        {/* Brand header */}
+        <div className="text-center space-y-2">
+          <div className="flex items-center justify-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-lg">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <span className="text-2xl font-bold text-foreground">HotelOS</span>
+          </div>
+          <p className="text-xs text-muted-foreground uppercase tracking-widest">
+            Operations Management Platform
+          </p>
+        </div>
+
         <LoginForm />
       </div>
     </div>

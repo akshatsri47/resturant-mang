@@ -1,23 +1,16 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function Home() {
+export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/auth/login");
-  }
+  if (!user) redirect("/auth/login");
 
   const { data: profile } = await supabase
     .from("staff_profiles")
     .select("role")
     .eq("id", user.id)
     .single();
-
-  if (!profile) {
-    redirect("/auth/login");
-  }
 
   const roleRedirects: Record<string, string> = {
     super_admin: "/dashboard/super-admin",
@@ -27,5 +20,6 @@ export default async function Home() {
     staff: "/dashboard/staff",
   };
 
-  redirect(roleRedirects[profile.role] ?? "/dashboard/admin");
+  const target = profile ? (roleRedirects[profile.role] ?? "/dashboard/admin") : "/dashboard/admin";
+  redirect(target);
 }
