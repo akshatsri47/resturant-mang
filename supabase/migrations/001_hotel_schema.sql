@@ -241,10 +241,10 @@ CREATE TRIGGER menu_items_updated_at BEFORE UPDATE ON menu_items FOR EACH ROW EX
 -- ─────────────────────────────────────────────────────────────
 -- AUTO-CREATE STAFF PROFILE ON SIGNUP
 -- ─────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION handle_new_user()
+CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO staff_profiles (id, role, full_name)
+  INSERT INTO public.staff_profiles (id, role, full_name)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'role', 'admin'),
@@ -297,10 +297,18 @@ CREATE POLICY "hotel staff can view their hotel" ON hotels
   FOR SELECT TO authenticated
   USING (id = get_my_hotel_id());
 
+CREATE POLICY "creator can read their hotel" ON hotels
+  FOR SELECT TO authenticated
+  USING (created_by = auth.uid());
+
 CREATE POLICY "admin can update their hotel" ON hotels
   FOR UPDATE TO authenticated
   USING (id = get_my_hotel_id() AND get_my_role() = 'admin')
   WITH CHECK (id = get_my_hotel_id() AND get_my_role() = 'admin');
+
+CREATE POLICY "admin can create a hotel" ON hotels
+  FOR INSERT TO authenticated
+  WITH CHECK (get_my_role() = 'admin' AND get_my_hotel_id() IS NULL);
 
 -- ROOM TYPES policies
 CREATE POLICY "staff can view room_types of their hotel" ON room_types
@@ -341,6 +349,11 @@ CREATE POLICY "anyone can lookup room by qr_token" ON rooms
 CREATE POLICY "user can read own profile" ON staff_profiles
   FOR SELECT TO authenticated
   USING (id = auth.uid());
+
+CREATE POLICY "user can link themselves to a hotel once" ON staff_profiles
+  FOR UPDATE TO authenticated
+  USING (id = auth.uid() AND hotel_id IS NULL)
+  WITH CHECK (id = auth.uid());
 
 CREATE POLICY "admin can view all profiles in hotel" ON staff_profiles
   FOR SELECT TO authenticated

@@ -18,14 +18,28 @@ export default async function DashboardLayout({
   }
 
   // Fetch profile + hotel name
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from("staff_profiles")
     .select("role, full_name, hotel_id")
     .eq("id", user.id)
     .single();
 
   if (!profile) {
-    redirect("/auth/login");
+    // Attempt auto-recovery for missing profiles (can happen if trigger fails)
+    const { data: newProfile, error } = await supabase
+      .from("staff_profiles")
+      .insert({
+        id: user.id,
+        role: "admin", // Default to admin for recovery
+        full_name: user.email?.split("@")[0] || "Unknown",
+      })
+      .select("role, full_name, hotel_id")
+      .single();
+
+    if (error || !newProfile) {
+      redirect("/auth/login?error=profile_missing");
+    }
+    profile = newProfile;
   }
 
   let hotelName: string | undefined;

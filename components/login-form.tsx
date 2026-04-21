@@ -41,10 +41,17 @@ export function LoginForm({
       if (error) throw error;
 
       // Get role and redirect
-      const { data: profile } = await supabase
-        .from("staff_profiles")
-        .select("role")
-        .single();
+      const { data: { user } } = await supabase.auth.getUser();
+      let profile = null;
+
+      if (user) {
+        const { data } = await supabase
+          .from("staff_profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+        profile = data;
+      }
 
       const roleRedirects: Record<string, string> = {
         super_admin: "/dashboard/super-admin",

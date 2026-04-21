@@ -20,6 +20,6 @@ export default async function DashboardPage() {
     staff: "/dashboard/staff",
   };
 
-  const target = profile ? (roleRedirects[profile.role] ?? "/dashboard/admin") : "/dashboard/admin";
+  const target = profile?.role ? (roleRedirects[profile.role] ?? "/dashboard/admin") : "/dashboard/admin";
   redirect(target);
 }

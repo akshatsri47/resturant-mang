@@ -26,9 +26,8 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: Must call getClaims() before any other logic
-  const { data } = await supabase.auth.getClaims();
-  const user = data?.claims;
+  // IMPORTANT: Must call getUser() before any other logic
+  const { data: { user } } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
 
   // Public paths that don't require auth
@@ -44,7 +43,7 @@ export async function updateSession(request: NextRequest) {
       const { data: profileData } = await supabase
         .from("staff_profiles")
         .select("role")
-        .eq("id", user.sub)
+        .eq("id", user.id)
         .single();
 
       const roleMap: Record<string, string> = {
