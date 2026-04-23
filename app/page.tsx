@@ -2,14 +2,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { ArrowRight, Bed, Coffee, ConciergeBell, ShieldCheck } from "lucide-react";
-import { connection } from "next/server";
+import { Suspense } from "react";
 
-export default async function Home() {
-  await connection();
+async function AuthRedirect() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // If user is already logged in, redirect them to their respective dashboard
   if (user) {
     const { data: profile } = await supabase
       .from("staff_profiles")
@@ -29,9 +27,17 @@ export default async function Home() {
       redirect(roleRedirects[profile.role] ?? "/dashboard/admin");
     }
   }
+  
+  return null;
+}
+
+export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
+      <Suspense fallback={null}>
+        <AuthRedirect />
+      </Suspense>
       {/* Navbar */}
       <header className="px-6 py-4 flex items-center justify-between border-b bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 sticky top-0 z-50">
         <div className="flex items-center gap-2">

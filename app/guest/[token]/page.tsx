@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { GuestInterface } from "@/components/guest/guest-interface";
 
+import { Suspense } from "react";
+
 interface GuestPageProps {
   params: Promise<{ token: string }>;
 }
 
-export default async function GuestPage({ params }: GuestPageProps) {
-  const { token } = await params;
+async function GuestData({ token }: { token: string }) {
   const supabase = await createClient();
 
   // Lookup room by QR token
@@ -54,6 +55,25 @@ export default async function GuestPage({ params }: GuestPageProps) {
       categories={categoriesRes.data ?? []}
       menuItems={visibleItems}
     />
+  );
+}
+
+export default async function GuestPage({ params }: GuestPageProps) {
+  const { token } = await params;
+
+  return (
+    <Suspense 
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <div className="animate-pulse flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-slate-500 font-medium">Loading room details...</p>
+          </div>
+        </div>
+      }
+    >
+      <GuestData token={token} />
+    </Suspense>
   );
 }
 
