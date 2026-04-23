@@ -15,7 +15,16 @@ import {
   Tag,
   Eye,
   EyeOff,
+  Image as ImageIcon,
+  Loader2,
+  ChevronDown,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatCurrency, decimalToCents, centsToDecimal } from "@/lib/utils/currency";
 import type { MenuCategory, MenuItem, RoomType } from "@/lib/types";
 
@@ -47,7 +56,11 @@ export function MenuManager({ hotelId, categories, items, roomTypes }: MenuManag
   const [itemPrice, setItemPrice] = useState("");
   const [itemChargeable, setItemChargeable] = useState(true);
   const [itemVisibleTo, setItemVisibleTo] = useState<string[]>(roomTypes.map((rt) => rt.id));
+  const [itemImage, setItemImage] = useState<File | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [itemLoading, setItemLoading] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
 
   const supabase = createClient();
 
@@ -72,35 +85,104 @@ export function MenuManager({ hotelId, categories, items, roomTypes }: MenuManag
     }
   };
 
-  const handleAddItem = async (e: React.FormEvent) => {
+  const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCategory) { setError("Select a category first"); return; }
     setItemLoading(true);
     setError(null);
     try {
+      let imageUrl = existingImageUrl;
+
+      // Upload image if selected
+      if (itemImage) {
+        const fileExt = itemImage.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("menu_images")
+          .upload(fileName, itemImage);
+
+        if (!uploadError && uploadData) {
+          const { data: { publicUrl } } = supabase.storage
+            .from("menu_images")
+            .getPublicUrl(fileName);
+          imageUrl = publicUrl;
+        }
+      }
+
       const priceCents = decimalToCents(parseFloat(itemPrice) || 0);
-      const { data, error } = await supabase
-        .from("menu_items")
-        .insert({
-          hotel_id: hotelId,
-          category_id: activeCategory,
-          name: itemName,
-          description: itemDesc || null,
-          price_cents: priceCents,
-          is_chargeable: itemChargeable,
-          visible_to_room_types: itemVisibleTo,
-          sort_order: localItems.filter((i) => i.category_id === activeCategory).length,
-        })
-        .select("*, menu_categories(name)")
-        .single();
+      
+      const payload = {
+        hotel_id: hotelId,
+        category_id: activeCategory,
+        name: itemName,
+        description: itemDesc || null,
+        price_cents: priceCents,
+        is_chargeable: itemChargeable,
+        visible_to_room_types: itemVisibleTo,
+        image_url: imageUrl,
+      };
+
+      let data, error;
+
+      if (editingItemId) {
+        const res = await supabase
+          .from("menu_items")
+          .update(payload)
+          .eq("id", editingItemId)
+          .select("*, menu_categories(name)")
+          .single();
+        data = res.data;
+        error = res.error;
+      } else {
+        const res = await supabase
+          .from("menu_items")
+          .insert({
+            ...payload,
+            sort_order: localItems.filter((i) => i.category_id === activeCategory).length,
+          })
+          .select("*, menu_categories(name)")
+          .single();
+        data = res.data;
+        error = res.error;
+      }
+
       if (error) throw error;
-      setLocalItems((p) => [...p, data]);
-      setItemName(""); setItemDesc(""); setItemPrice(""); setAddingItem(false);
+      
+      if (editingItemId) {
+        setLocalItems((p) => p.map((i) => i.id === editingItemId ? data : i));
+      } else {
+        setLocalItems((p) => [...p, data]);
+      }
+
+      resetItemForm();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {
       setItemLoading(false);
     }
+  };
+
+  const resetItemForm = () => {
+    setItemName(""); 
+    setItemDesc(""); 
+    setItemPrice(""); 
+    setItemImage(null); 
+    setExistingImageUrl(null);
+    setEditingItemId(null);
+    setAddingItem(false);
+  };
+
+  const startEditing = (item: MenuItem) => {
+    setActiveCategory(item.category_id);
+    setEditingItemId(item.id);
+    setItemName(item.name);
+    setItemDesc(item.description || "");
+    setItemPrice(centsToDecimal(item.price_cents).toString());
+    setItemChargeable(item.is_chargeable);
+    setItemVisibleTo(item.visible_to_room_types);
+    setExistingImageUrl(item.image_url || null);
+    setItemImage(null);
+    setAddingItem(true);
   };
 
   const toggleItemAvailability = async (itemId: string, current: boolean) => {
@@ -120,6 +202,101 @@ export function MenuManager({ hotelId, categories, items, roomTypes }: MenuManag
     setLocalCategories((p) => p.filter((c) => c.id !== catId));
     setLocalItems((p) => p.filter((i) => i.category_id !== catId));
     setActiveCategory(localCategories.find((c) => c.id !== catId)?.id ?? null);
+  };
+
+  const loadTemplate = async (type: "indian" | "indo_chinese" | "indo_italian") => {
+    if (!confirm(`This will load the ${type.replace('_', '-')} template. Continue?`)) return;
+    setTemplateLoading(true);
+    setError(null);
+    try {
+      let templateCategories: { name: string, icon: string }[] = [];
+      let templateItemsFactory: (cats: Record<string, string>) => any[] = () => [];
+
+      if (type === "indian") {
+        templateCategories = [
+          { name: "Indian Starters", icon: "🥟" },
+          { name: "Indian Mains", icon: "🍛" },
+          { name: "Breads & Rice", icon: "🥖" },
+          { name: "Desserts & Drinks", icon: "☕" },
+        ];
+        templateItemsFactory = (cats) => [
+          { category_id: cats["Indian Starters"], name: "Paneer Tikka", description: "Grilled cottage cheese marinated in spices", price_cents: 35000, image_url: "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=500&q=80" },
+          { category_id: cats["Indian Starters"], name: "Punjabi Samosa", description: "Crispy pastry filled with spiced potatoes", price_cents: 15000, image_url: "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=500&q=80" },
+          { category_id: cats["Indian Mains"], name: "Butter Chicken", description: "Classic creamy tomato curry with tender chicken", price_cents: 45000, image_url: "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=500&q=80" },
+          { category_id: cats["Indian Mains"], name: "Dal Makhani", description: "Slow-cooked black lentils in creamy butter sauce", price_cents: 30000, image_url: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&q=80" },
+          { category_id: cats["Breads & Rice"], name: "Garlic Naan", description: "Soft bread cooked in tandoor with garlic butter", price_cents: 8000, image_url: "https://images.unsplash.com/photo-1626082895617-2c6ab34758ce?w=500&q=80" },
+          { category_id: cats["Breads & Rice"], name: "Chicken Biryani", description: "Aromatic basmati rice cooked with spiced chicken", price_cents: 40000, image_url: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&q=80" },
+          { category_id: cats["Desserts & Drinks"], name: "Masala Chai", description: "Indian spiced tea with milk", price_cents: 10000, image_url: "https://images.unsplash.com/photo-1561336313-0bd5e0b27ec8?w=500&q=80" },
+          { category_id: cats["Desserts & Drinks"], name: "Mango Lassi", description: "Sweet yogurt drink blended with mangoes", price_cents: 18000, image_url: "https://images.unsplash.com/photo-1628103510526-9a2f7c00609f?w=500&q=80" },
+        ];
+      } else if (type === "indo_chinese") {
+        templateCategories = [
+          { name: "Indo-Chinese Starters", icon: "🥟" },
+          { name: "Noodles & Rice", icon: "🍜" },
+          { name: "Indo-Chinese Mains", icon: "🍛" },
+        ];
+        templateItemsFactory = (cats) => [
+          { category_id: cats["Indo-Chinese Starters"], name: "Chilli Paneer", description: "Crispy paneer tossed in spicy soy sauce", price_cents: 32000, image_url: "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=500&q=80" },
+          { category_id: cats["Noodles & Rice"], name: "Hakka Noodles", description: "Wok-tossed noodles with veggies", price_cents: 25000, image_url: "https://images.unsplash.com/photo-1585032226651-759b368d7246?w=500&q=80" },
+          { category_id: cats["Indo-Chinese Mains"], name: "Veg Manchurian", description: "Vegetable dumplings in dark soy gravy", price_cents: 28000, image_url: "https://images.unsplash.com/photo-1626804475297-41609ea004eb?w=500&q=80" },
+        ];
+      } else if (type === "indo_italian") {
+        templateCategories = [
+          { name: "Pizzas", icon: "🍕" },
+          { name: "Pastas", icon: "🍝" },
+          { name: "Italian Starters", icon: "🧄" },
+        ];
+        templateItemsFactory = (cats) => [
+          { category_id: cats["Pizzas"], name: "Paneer Tikka Pizza", description: "Fusion pizza with paneer tikka topping", price_cents: 45000, image_url: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=500&q=80" },
+          { category_id: cats["Pastas"], name: "Makhani Pasta", description: "Penne tossed in creamy makhani sauce", price_cents: 35000, image_url: "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=500&q=80" },
+          { category_id: cats["Italian Starters"], name: "Garlic Bread with Cheese", description: "Toasted bread with garlic butter and mozzarella", price_cents: 18000, image_url: "https://images.unsplash.com/photo-1573140247632-f8fd74997d5c?w=500&q=80" },
+        ];
+      }
+
+      const catMap: Record<string, string> = {};
+      let orderOffset = localCategories.length;
+      
+      for (const cat of templateCategories) {
+        // Handle duplicate categories by using existing ones
+        const existing = localCategories.find(c => c.name.toLowerCase() === cat.name.toLowerCase());
+        if (existing) {
+          catMap[cat.name] = existing.id;
+        } else {
+          const { data, error } = await supabase.from("menu_categories").insert({ 
+            hotel_id: hotelId, 
+            name: cat.name, 
+            icon: cat.icon, 
+            sort_order: orderOffset++ 
+          }).select().single();
+          
+          if (error) throw error;
+          catMap[cat.name] = data.id;
+          setLocalCategories(p => [...p, data]);
+        }
+      }
+
+      const newItemsData = templateItemsFactory(catMap);
+      
+      const { data: insertedItems, error: itemsErr } = await supabase.from("menu_items").insert(
+        newItemsData.map((item, idx) => ({
+          ...item,
+          hotel_id: hotelId,
+          is_chargeable: true,
+          visible_to_room_types: roomTypes.map(rt => rt.id),
+          sort_order: idx
+        }))
+      ).select("*, menu_categories(name)");
+
+      if (itemsErr) throw itemsErr;
+
+      if (insertedItems) setLocalItems((p) => [...p, ...insertedItems]);
+      setActiveCategory(catMap[templateCategories[0].name]);
+      
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error loading template");
+    } finally {
+      setTemplateLoading(false);
+    }
   };
 
   const activeItems = localItems.filter((i) => i.category_id === activeCategory);
@@ -221,32 +398,103 @@ export function MenuManager({ hotelId, categories, items, roomTypes }: MenuManag
               ({activeItems.length} items)
             </span>
           </h2>
-          <Button
-            size="sm"
-            onClick={() => setAddingItem(!addingItem)}
-            disabled={!activeCategory}
-            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" /> Add Item
-          </Button>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" disabled={templateLoading} className="gap-2">
+                  {templateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UtensilsCrossed className="h-4 w-4" />}
+                  Templates <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => loadTemplate("indian")}>
+                  Indian Cuisine
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => loadTemplate("indo_chinese")}>
+                  Indo-Chinese Cuisine
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => loadTemplate("indo_italian")}>
+                  Indo-Italian Cuisine
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              size="sm"
+              onClick={() => {
+                resetItemForm();
+                setAddingItem(true);
+              }}
+              disabled={!activeCategory}
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4" /> Add Item
+            </Button>
+          </div>
         </div>
 
         {addingItem && (
           <div className="glass-card p-5">
-            <form onSubmit={handleAddItem} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Item Name *</Label>
-                  <Input placeholder="e.g. Masala Chai" value={itemName} onChange={(e) => setItemName(e.target.value)} required />
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">{editingItemId ? "Edit Item" : "Add New Item"}</h3>
+            </div>
+            <form onSubmit={handleSaveItem} className="space-y-4">
+              <div className="flex flex-col md:flex-row gap-4 items-start">
+                {/* Image Upload Area */}
+                <div className="shrink-0 w-full md:w-32">
+                  <Label className="block mb-2 text-sm">Image (Optional)</Label>
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border/60 rounded-xl cursor-pointer hover:bg-muted/50 transition-colors overflow-hidden relative group bg-card">
+                    {itemImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img 
+                        src={URL.createObjectURL(itemImage)} 
+                        alt="Preview" 
+                        className="w-full h-full object-cover"
+                      />
+                    ) : existingImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img 
+                        src={existingImageUrl} 
+                        alt="Existing" 
+                        className="w-full h-full object-cover group-hover:opacity-50 transition-opacity"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-muted-foreground group-hover:text-primary transition-colors">
+                        <ImageIcon className="h-6 w-6 mb-2" />
+                        <span className="text-xs font-medium">Upload</span>
+                      </div>
+                    )}
+                    {(existingImageUrl && !itemImage) && (
+                      <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                        <ImageIcon className="h-5 w-5 mb-1" />
+                        <span className="text-[10px] font-medium uppercase tracking-wider">Change</span>
+                      </div>
+                    )}
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*"
+                      onChange={(e) => setItemImage(e.target.files?.[0] || null)}
+                    />
+                  </label>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Price (₹)</Label>
-                  <Input type="number" placeholder="0.00" min="0" step="0.01" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} />
+
+                <div className="flex-1 space-y-4 w-full">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Item Name *</Label>
+                      <Input placeholder="e.g. Masala Chai" value={itemName} onChange={(e) => setItemName(e.target.value)} required />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Price (₹)</Label>
+                      <Input type="number" placeholder="0.00" min="0" step="0.01" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Description</Label>
+                    <Input placeholder="Short description..." value={itemDesc} onChange={(e) => setItemDesc(e.target.value)} />
+                  </div>
                 </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Description</Label>
-                <Input placeholder="Short description..." value={itemDesc} onChange={(e) => setItemDesc(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label className="text-sm">Visible to Room Types</Label>
@@ -286,33 +534,42 @@ export function MenuManager({ hotelId, categories, items, roomTypes }: MenuManag
                 </Label>
               </div>
               <div className="flex gap-3">
-                <Button type="button" variant="ghost" onClick={() => setAddingItem(false)}>Cancel</Button>
+                <Button type="button" variant="ghost" onClick={resetItemForm}>Cancel</Button>
                 <Button type="submit" disabled={itemLoading} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                  {itemLoading ? "Saving..." : "Save Item"}
+                  {itemLoading ? "Saving..." : editingItemId ? "Update Item" : "Save Item"}
                 </Button>
               </div>
             </form>
           </div>
         )}
 
-        {/* Items grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {activeItems.map((item) => (
             <div key={item.id} className={`glass-card p-4 transition-all ${!item.is_available ? "opacity-50" : ""}`}>
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-3">
+                {item.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={item.image_url} alt={item.name} className="w-16 h-16 rounded-lg object-cover shrink-0 shadow-sm" />
+                ) : (
+                  <div className="w-16 h-16 rounded-lg bg-muted/50 flex items-center justify-center shrink-0 border border-border/50">
+                    <UtensilsCrossed className="h-6 w-6 text-muted-foreground/50" />
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-foreground truncate">{item.name}</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-foreground truncate">{item.name}</p>
+                    {item.is_chargeable && (
+                      <p className="text-primary font-bold text-sm shrink-0">
+                        {formatCurrency(item.price_cents)}
+                      </p>
+                    )}
+                  </div>
                   {item.description && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 pr-2">
                       {item.description}
                     </p>
                   )}
                 </div>
-                {item.is_chargeable && (
-                  <p className="text-primary font-bold text-sm shrink-0">
-                    {formatCurrency(item.price_cents)}
-                  </p>
-                )}
               </div>
               <div className="flex items-center gap-2 mt-3">
                 <button
@@ -333,6 +590,12 @@ export function MenuManager({ hotelId, categories, items, roomTypes }: MenuManag
                     Free
                   </span>
                 )}
+                <button
+                  onClick={() => startEditing(item)}
+                  className="p-1 hover:text-primary text-muted-foreground transition-colors"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
                 <button
                   onClick={() => deleteItem(item.id)}
                   className="p-1 hover:text-destructive text-muted-foreground transition-colors"

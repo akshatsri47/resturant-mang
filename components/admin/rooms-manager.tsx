@@ -16,6 +16,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import type { Room, RoomType, Floor } from "@/lib/types";
+import QRCode from "qrcode";
+import { jsPDF } from "jspdf";
 
 interface RoomsManagerProps {
   hotelId: string;
@@ -48,6 +50,7 @@ export function RoomsManager({ hotelId, roomTypes, floors, rooms }: RoomsManager
   const [selectedRoomType, setSelectedRoomType] = useState("");
   const [addingRoom, setAddingRoom] = useState(false);
   const [roomLoading, setRoomLoading] = useState(false);
+  const [downloadingQRs, setDownloadingQRs] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [localRoomTypes, setLocalRoomTypes] = useState<RoomType[]>(roomTypes);
@@ -130,6 +133,65 @@ export function RoomsManager({ hotelId, roomTypes, floors, rooms }: RoomsManager
 
   const generateQrUrl = (token: string) =>
     `${window.location.origin}/guest/${token}`;
+
+  const handleDownloadAllQRs = async () => {
+    if (localRooms.length === 0) {
+      alert("No rooms available to generate QRs.");
+      return;
+    }
+    setDownloadingQRs(true);
+    try {
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      for (let i = 0; i < localRooms.length; i++) {
+        const room = localRooms[i];
+        if (i > 0) doc.addPage();
+
+        const url = generateQrUrl(room.qr_token);
+        const qrDataUrl = await QRCode.toDataURL(url, {
+          width: 400,
+          margin: 2,
+          color: {
+            dark: "#0f172a", // slate-950
+            light: "#ffffff",
+          },
+        });
+
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const qrSize = 100;
+        
+        const x = (pageWidth - qrSize) / 2;
+        const y = (pageHeight - qrSize) / 2 - 20;
+
+        doc.setFontSize(36);
+        doc.setFont("helvetica", "bold");
+        doc.text(`Room ${room.room_number}`, pageWidth / 2, y - 20, { align: "center" });
+        
+        doc.addImage(qrDataUrl, "PNG", x, y, qrSize, qrSize);
+
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "normal");
+        doc.text("Scan this QR code to access in-room services", pageWidth / 2, y + qrSize + 20, { align: "center" });
+        
+        doc.setFontSize(10);
+        doc.setTextColor(150);
+        doc.text(url, pageWidth / 2, y + qrSize + 30, { align: "center" });
+        doc.setTextColor(0);
+      }
+
+      doc.save("Hotel_Room_QRs.pdf");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate PDF. Check console for details.");
+    } finally {
+      setDownloadingQRs(false);
+    }
+  };
 
   const tabs: { id: ActiveTab; label: string; icon: React.ElementType }[] = [
     { id: "rooms", label: `Rooms (${localRooms.length})`, icon: BedDouble },
@@ -306,14 +368,26 @@ export function RoomsManager({ hotelId, roomTypes, floors, rooms }: RoomsManager
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Rooms</h2>
-            <Button
-              size="sm"
-              onClick={() => setAddingRoom(!addingRoom)}
-              disabled={localRoomTypes.length === 0}
-              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus className="h-4 w-4" /> Add Room
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDownloadAllQRs}
+                disabled={downloadingQRs || localRooms.length === 0}
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {downloadingQRs ? "Generating..." : "Download QRs"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setAddingRoom(!addingRoom)}
+                disabled={localRoomTypes.length === 0}
+                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <Plus className="h-4 w-4" /> Add Room
+              </Button>
+            </div>
           </div>
 
           {localRoomTypes.length === 0 && (

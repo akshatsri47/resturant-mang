@@ -169,9 +169,16 @@ CREATE TABLE IF NOT EXISTS bill_line_items (
 );
 
 -- Add FK from requests to bill_line_items (after both tables exist)
-ALTER TABLE requests
-  ADD CONSTRAINT IF NOT EXISTS fk_requests_bill_line_item
-  FOREIGN KEY (bill_line_item_id) REFERENCES bill_line_items(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_requests_bill_line_item'
+  ) THEN
+    ALTER TABLE requests
+      ADD CONSTRAINT fk_requests_bill_line_item
+      FOREIGN KEY (bill_line_item_id) REFERENCES bill_line_items(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- ─────────────────────────────────────────────────────────────
 -- SLA RULES

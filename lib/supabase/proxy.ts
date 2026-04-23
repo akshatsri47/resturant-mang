@@ -63,9 +63,8 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const url = request.nextUrl.clone();
-    url.pathname = "/auth/login";
-    return NextResponse.redirect(url);
+    // Do NOT redirect unauthenticated users away from the root ("/") landing page
+    return supabaseResponse;
   }
 
   // ── Protect dashboard routes ───────────────────────────────────
