@@ -4,9 +4,18 @@ import Link from "next/link";
 import { ArrowRight, Bed, Coffee, ConciergeBell, ShieldCheck } from "lucide-react";
 import { Suspense } from "react";
 
+const YEAR = new Date().getFullYear();
+
+
 async function AuthRedirect() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  // Stale/invalid refresh token — sign out silently and show landing page
+  if (error?.code === 'refresh_token_not_found' || error?.status === 400) {
+    await supabase.auth.signOut();
+    return null;
+  }
 
   if (user) {
     const { data: profile } = await supabase
@@ -30,6 +39,7 @@ async function AuthRedirect() {
   
   return null;
 }
+
 
 export default function Home() {
 
@@ -128,7 +138,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="py-8 text-center text-slate-500 dark:text-slate-400 text-sm border-t border-slate-200 dark:border-slate-800">
-        <p>© {new Date().getFullYear()} Lumiere Hotel Operations. All rights reserved.</p>
+        <p>© {YEAR} Lumiere Hotel Operations. All rights reserved.</p>
       </footer>
     </div>
   );

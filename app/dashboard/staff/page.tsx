@@ -33,6 +33,7 @@ export default async function StaffDashboard() {
       <main className="flex-1 p-6">
         <StaffTaskList
           userId={user.id}
+          hotelId={profile.hotel_id}
           initialTasks={tasks ?? []}
         />
       </main>

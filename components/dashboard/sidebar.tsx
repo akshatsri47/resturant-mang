@@ -56,6 +56,12 @@ const navItems: NavItem[] = [
     roles: ["admin", "super_admin"],
   },
   {
+    label: "Requests Queue",
+    href: "/dashboard/reception",
+    icon: ClipboardList,
+    roles: ["admin", "super_admin"],
+  },
+  {
     label: "Staff",
     href: "/dashboard/admin/staff",
     icon: Users,
@@ -85,12 +91,6 @@ const navItems: NavItem[] = [
     label: "Room Bills",
     href: "/dashboard/reception/bills",
     icon: CreditCard,
-    roles: ["reception"],
-  },
-  {
-    label: "Checkout",
-    href: "/dashboard/reception/checkout",
-    icon: Receipt,
     roles: ["reception"],
   },
 

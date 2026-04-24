@@ -92,9 +92,9 @@ serve(async (req) => {
       });
     }
 
-    const projectId = Deno.env.get('FIREBASE_PROJECT_ID')!;
-    const clientEmail = Deno.env.get('FIREBASE_CLIENT_EMAIL')!;
-    const privateKey = Deno.env.get('FIREBASE_PRIVATE_KEY')!.replace(/\\n/g, '\n');
+    const projectId = Deno.env.get('project_id') || Deno.env.get('FIREBASE_PROJECT_ID')!;
+    const clientEmail = Deno.env.get('client_email') || Deno.env.get('FIREBASE_CLIENT_EMAIL')!;
+    const privateKey = (Deno.env.get('private_key') || Deno.env.get('FIREBASE_PRIVATE_KEY')!).replace(/\\n/g, '\n');
 
     const accessToken = await getAccessToken(clientEmail, privateKey);
     const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;

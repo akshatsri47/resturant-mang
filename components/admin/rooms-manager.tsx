@@ -16,8 +16,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import type { Room, RoomType, Floor } from "@/lib/types";
-import QRCode from "qrcode";
-import { jsPDF } from "jspdf";
+
 
 interface RoomsManagerProps {
   hotelId: string;
@@ -141,50 +140,101 @@ export function RoomsManager({ hotelId, roomTypes, floors, rooms }: RoomsManager
     }
     setDownloadingQRs(true);
     try {
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
+      // Fetch hotel name for the header
+      let hotelName = "Grand Hotel";
+      try {
+        const { data: h } = await supabase.from("hotels").select("name").eq("id", hotelId).single();
+        if (h?.name) hotelName = h.name;
+      } catch (_) {}
 
-      for (let i = 0; i < localRooms.length; i++) {
-        const room = localRooms[i];
-        if (i > 0) doc.addPage();
-
+      const qrPages = localRooms.map((room, idx) => {
         const url = generateQrUrl(room.qr_token);
-        const qrDataUrl = await QRCode.toDataURL(url, {
-          width: 400,
-          margin: 2,
-          color: {
-            dark: "#0f172a", // slate-950
-            light: "#ffffff",
-          },
-        });
+        const qrImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&color=2d0a0a&bgcolor=fdf8ee&data=${encodeURIComponent(url)}`;
+        const isLast = idx === localRooms.length - 1;
+        const roomTypeName = (room.room_types as any)?.name ?? "";
+        const floorInfo = (room.floors as any)
+          ? `Floor ${(room.floors as any).floor_number}${(room.floors as any).name ? " · " + (room.floors as any).name : ""}`
+          : "";
 
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const qrSize = 100;
-        
-        const x = (pageWidth - qrSize) / 2;
-        const y = (pageHeight - qrSize) / 2 - 20;
+        return `
+          <div class="page" style="${isLast ? "" : "page-break-after: always;"}">
+            <div class="outer-frame">
+              <div class="corner tl">✦</div>
+              <div class="corner tr">✦</div>
+              <div class="corner bl">✦</div>
+              <div class="corner br">✦</div>
+              <div class="rule-row"><div class="rule-line"></div><div class="rule-diamond">◆</div><div class="rule-line"></div></div>
+              <div class="crown">♛</div>
+              <div class="hotel-name">${hotelName.toUpperCase()}</div>
+              <div class="divider">— ✦ —</div>
+              <div class="room-label">ROOM</div>
+              <div class="room-number">${room.room_number}</div>
+              ${roomTypeName || floorInfo ? `<div class="room-type">${[roomTypeName, floorInfo].filter(Boolean).join("  ·  ")}</div>` : ""}
+              <div class="rule-row" style="margin: 18px 0;"><div class="rule-line"></div><div class="rule-diamond">◆</div><div class="rule-line"></div></div>
+              <div class="qr-wrap"><img src="${qrImgSrc}" class="qr-img" /></div>
+              <div class="scan-text">Scan to access in-room services</div>
+              <div class="scan-sub">Point your phone camera at the code above</div>
+              <div class="rule-row" style="margin-top: 22px;"><div class="rule-line"></div><div class="rule-diamond">◆</div><div class="rule-line"></div></div>
+              <div class="footer-text">~ Exclusively for our esteemed guests ~</div>
+            </div>
+          </div>
+        `;
+      }).join("");
 
-        doc.setFontSize(36);
-        doc.setFont("helvetica", "bold");
-        doc.text(`Room ${room.room_number}`, pageWidth / 2, y - 20, { align: "center" });
-        
-        doc.addImage(qrDataUrl, "PNG", x, y, qrSize, qrSize);
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a0a02; font-family: 'Crimson Text', 'Georgia', serif; }
+    .page {
+      width: 210mm; min-height: 297mm;
+      display: flex; align-items: center; justify-content: center; padding: 18mm;
+      background: radial-gradient(ellipse at top, #2d1100 0%, #0d0400 60%),
+        repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(180,130,40,0.03) 40px, rgba(180,130,40,0.03) 41px);
+    }
+    .outer-frame {
+      width: 100%; min-height: 245mm;
+      border: 3px solid #b8860b;
+      box-shadow: 0 0 0 1px #6b3a10, inset 0 0 0 2px #6b3a10, inset 0 0 0 4px rgba(184,134,11,0.3), 0 0 60px rgba(184,134,11,0.15);
+      background: linear-gradient(160deg, #1c0c02 0%, #2a1005 40%, #1c0c02 100%);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 32px 40px 28px; position: relative;
+    }
+    .corner { position: absolute; font-size: 18px; color: #b8860b; line-height: 1; }
+    .tl { top: 10px; left: 14px; } .tr { top: 10px; right: 14px; }
+    .bl { bottom: 10px; left: 14px; } .br { bottom: 10px; right: 14px; }
+    .rule-row { display: flex; align-items: center; width: 100%; gap: 10px; margin: 4px 0; }
+    .rule-line { flex: 1; height: 1px; background: linear-gradient(to right, transparent, #b8860b, transparent); }
+    .rule-diamond { color: #b8860b; font-size: 10px; }
+    .crown { font-size: 54px; margin: 8px 0 4px; color: #d4a017; filter: drop-shadow(0 0 12px rgba(184,134,11,0.6)); }
+    .hotel-name { font-family: 'Cinzel','Georgia',serif; font-size: 18px; font-weight: 900; color: #d4a017; letter-spacing: 0.35em; text-align: center; text-shadow: 0 0 20px rgba(212,160,23,0.4); margin-bottom: 4px; }
+    .divider { color: #8b6914; font-size: 12px; letter-spacing: 0.2em; margin: 6px 0 10px; }
+    .room-label { font-family: 'Cinzel','Georgia',serif; font-size: 11px; letter-spacing: 0.5em; color: #8b6914; margin-bottom: 4px; }
+    .room-number { font-family: 'Cinzel','Georgia',serif; font-size: 64px; font-weight: 900; color: #f5deb3; line-height: 1; letter-spacing: 0.05em; text-shadow: 0 0 30px rgba(212,160,23,0.5), 2px 2px 0 rgba(0,0,0,0.5); margin-bottom: 6px; }
+    .room-type { font-family: 'Crimson Text','Georgia',serif; font-size: 13px; font-style: italic; color: #b8860b; letter-spacing: 0.1em; margin-bottom: 2px; }
+    .qr-wrap { background: #fdf8ee; padding: 14px; border: 2px solid #b8860b; box-shadow: 0 0 0 1px #6b3a10, 0 0 25px rgba(184,134,11,0.3); margin: 4px 0 12px; }
+    .qr-img { width: 280px; height: 280px; display: block; }
+    .scan-text { font-family: 'Cinzel','Georgia',serif; font-size: 12px; font-weight: 600; color: #d4a017; letter-spacing: 0.2em; text-align: center; }
+    .scan-sub { font-family: 'Crimson Text','Georgia',serif; font-size: 12px; font-style: italic; color: #7a5c20; text-align: center; margin-top: 3px; }
+    .footer-text { font-family: 'Crimson Text','Georgia',serif; font-size: 12px; font-style: italic; color: #7a5c20; text-align: center; letter-spacing: 0.05em; margin-top: 8px; }
+  </style>
+</head>
+<body>${qrPages}</body>
+</html>`;
 
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "normal");
-        doc.text("Scan this QR code to access in-room services", pageWidth / 2, y + qrSize + 20, { align: "center" });
-        
-        doc.setFontSize(10);
-        doc.setTextColor(150);
-        doc.text(url, pageWidth / 2, y + qrSize + 30, { align: "center" });
-        doc.setTextColor(0);
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => { printWindow.print(); }, 1200);
+      } else {
+        alert("Popup blocked. Please allow popups for this site to print QRs.");
       }
-
-      doc.save("Hotel_Room_QRs.pdf");
     } catch (err) {
       console.error(err);
       alert("Failed to generate PDF. Check console for details.");
@@ -192,6 +242,7 @@ export function RoomsManager({ hotelId, roomTypes, floors, rooms }: RoomsManager
       setDownloadingQRs(false);
     }
   };
+
 
   const tabs: { id: ActiveTab; label: string; icon: React.ElementType }[] = [
     { id: "rooms", label: `Rooms (${localRooms.length})`, icon: BedDouble },

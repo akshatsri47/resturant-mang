@@ -9,8 +9,10 @@ import type { Request, RequestStatus } from "@/lib/types";
 
 interface StaffTaskListProps {
   userId: string;
+  hotelId: string;
   initialTasks: Request[];
 }
+
 
 const typeIcons: Record<string, string> = {
   order: "🍽️",
@@ -24,33 +26,48 @@ const priorityColors: Record<string, string> = {
   high: "border-l-red-500",
 };
 
-export function StaffTaskList({ userId, initialTasks }: StaffTaskListProps) {
+export function StaffTaskList({ userId, hotelId, initialTasks }: StaffTaskListProps) {
   const [tasks, setTasks] = useState<Request[]>(initialTasks);
   const [updating, setUpdating] = useState<string | null>(null);
 
   const supabase = createClient();
 
-  // Real-time: listen for new assignments
+  // Real-time: subscribe to ALL hotel requests, filter client-side.
+  // Subscribing by assigned_to misses UPDATE events when a task first gets assigned
+  // (Supabase evaluates the filter against the OLD row, which has no assigned_to yet).
   useEffect(() => {
     const channel = supabase
-      .channel(`staff-${userId}`)
+      .channel(`staff-tasks-${userId}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "requests",
-          filter: `assigned_to=eq.${userId}`,
+          filter: `hotel_id=eq.${hotelId}`,
         },
         (payload) => {
           if (payload.eventType === "INSERT") {
-            setTasks((prev) => [payload.new as Request, ...prev]);
+            const newReq = payload.new as Request;
+            if (newReq.assigned_to === userId && !["completed", "cancelled"].includes(newReq.status)) {
+              setTasks((prev) => [newReq, ...prev]);
+            }
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as Request;
-            if (["completed", "cancelled"].includes(updated.status)) {
-              setTasks((prev) => prev.filter((t) => t.id !== updated.id));
+            if (updated.assigned_to === userId) {
+              if (["completed", "cancelled"].includes(updated.status)) {
+                setTasks((prev) => prev.filter((t) => t.id !== updated.id));
+              } else {
+                // New assignment or update to an existing task
+                setTasks((prev) => {
+                  const exists = prev.some((t) => t.id === updated.id);
+                  if (exists) return prev.map((t) => (t.id === updated.id ? updated : t));
+                  return [updated, ...prev]; // newly assigned to me
+                });
+              }
             } else {
-              setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+              // Task was reassigned away from me
+              setTasks((prev) => prev.filter((t) => t.id !== updated.id));
             }
           }
         }
@@ -58,7 +75,7 @@ export function StaffTaskList({ userId, initialTasks }: StaffTaskListProps) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [userId]);
+  }, [userId, hotelId]);
 
   const handleStatusUpdate = async (taskId: string, newStatus: RequestStatus) => {
     setUpdating(taskId);
